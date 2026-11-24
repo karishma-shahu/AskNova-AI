@@ -2,11 +2,10 @@
 import { useState } from 'react'
 import './App.css'
 
-// Use Render backend URL in production.
-// Use Vite proxy during local development.
+// Backend URL from Render environment variables
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || ''
-).replace(/\/+$/, '')
+).trim().replace(/\/+$/, '')
 
 function App() {
   const [message, setMessage] = useState('')
@@ -27,6 +26,15 @@ function App() {
     setLoading(true)
 
     try {
+      // Production needs the deployed backend URL
+      if (import.meta.env.PROD && !API_BASE_URL) {
+        throw new Error(
+          'Backend URL missing. Add VITE_API_BASE_URL in Render settings.'
+        )
+      }
+
+      // Local development uses Vite proxy.
+      // Render production uses the deployed backend URL.
       const chatUrl = API_BASE_URL
         ? `${API_BASE_URL}/chat`
         : '/api/chat'
@@ -36,7 +44,9 @@ function App() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ message: userMessage })
+        body: JSON.stringify({
+          message: userMessage
+        })
       })
 
       const responseText = await response.text()
@@ -66,7 +76,10 @@ function App() {
 
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', text: data.reply }
+        {
+          role: 'assistant',
+          text: data.reply
+        }
       ])
 
     } catch (error) {
@@ -93,10 +106,14 @@ function App() {
 
   return (
     <div className="app-container">
+
       <aside className="sidebar">
         <h2 className="logo">✦ AskNova AI</h2>
 
-        <button className="new-chat-btn" onClick={newChat}>
+        <button
+          className="new-chat-btn"
+          onClick={newChat}
+        >
           + New Chat
         </button>
 
@@ -107,13 +124,16 @@ function App() {
       </aside>
 
       <main className="chat-area">
+
         <header className="topbar">
           <h3>AI Assistant</h3>
           <span className="status">● Online</span>
         </header>
 
         {messages.length === 0 ? (
+
           <section className="welcome-section">
+
             <div className="nova-icon">✦</div>
 
             <h1>Welcome to AskNova AI</h1>
@@ -124,6 +144,7 @@ function App() {
             </p>
 
             <div className="suggestions">
+
               <div className="suggestion-card">
                 What is Artificial Intelligence?
               </div>
@@ -139,21 +160,31 @@ function App() {
               <div className="suggestion-card">
                 How does Machine Learning work?
               </div>
+
             </div>
           </section>
+
         ) : (
+
           <section className="messages-container">
+
             {messages.map((msg, index) => (
+
               <div
                 key={index}
                 className={`message ${msg.role}`}
               >
+
                 <strong>
-                  {msg.role === 'user' ? 'You' : '✦ AskNova AI'}
+                  {msg.role === 'user'
+                    ? 'You'
+                    : '✦ AskNova AI'}
                 </strong>
 
                 <p>{msg.text}</p>
+
               </div>
+
             ))}
 
             {loading && (
@@ -161,7 +192,9 @@ function App() {
                 ✦ AskNova AI is thinking...
               </div>
             )}
+
           </section>
+
         )}
 
         <form
@@ -171,6 +204,7 @@ function App() {
             sendMessage()
           }}
         >
+
           <input
             type="text"
             placeholder="Ask Nova anything..."
@@ -186,11 +220,13 @@ function App() {
           >
             ↑
           </button>
+
         </form>
 
         <p className="footer-text">
           AskNova AI can make mistakes. Verify important information.
         </p>
+
       </main>
     </div>
   )
