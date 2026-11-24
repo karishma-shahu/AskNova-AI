@@ -7,17 +7,19 @@ import json
 import os
 
 
-# Load API key from .env
+# Project paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 
 
-
+# Load Gemini API key
 def load_api_key():
-    # Read the latest key from .env first
+
+    # First read local .env file
     try:
         with open(ENV_FILE, "r", encoding="utf-8-sig") as file:
             for line in file:
+
                 line = line.strip()
 
                 if not line or line.startswith("#") or "=" not in line:
@@ -27,33 +29,53 @@ def load_api_key():
 
                 if key.strip() == "GEMINI_API_KEY":
                     value = value.strip().strip('"').strip("'")
+
                     if value:
                         return value
 
     except OSError:
         pass
 
-    # Use system environment only if .env has no key
+    # Render environment variable
     return os.environ.get("GEMINI_API_KEY", "").strip()
+
 
 GEMINI_API_KEY = load_api_key()
 
+# Gemini API settings
 API_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 MODEL = "gemini-3.5-flash-lite"
+
+# Render frontend URL (add in Render environment settings)
+FRONTEND_ORIGIN = os.environ.get(
+    "FRONTEND_ORIGIN", ""
+).strip().rstrip("/")
 
 
 class AskNovaHandler(BaseHTTPRequestHandler):
 
-    # CORS headers
+    # CORS configuration
     def add_cors_headers(self):
+
         origin = self.headers.get("Origin", "")
         parsed_origin = urlparse(origin)
 
-        if (
+        # Allow local development
+        is_local = (
             parsed_origin.scheme == "http"
             and parsed_origin.hostname in ("localhost", "127.0.0.1")
-        ):
-            self.send_header("Access-Control-Allow-Origin", origin)
+        )
+
+        # Allow deployed frontend
+        is_deployed = (
+            bool(FRONTEND_ORIGIN)
+            and origin == FRONTEND_ORIGIN
+        )
+
+        if is_local or is_deployed:
+            self.send_header(
+                "Access-Control-Allow-Origin", origin
+            )
             self.send_header("Vary", "Origin")
 
         self.send_header(
@@ -64,56 +86,85 @@ class AskNovaHandler(BaseHTTPRequestHandler):
         )
         self.send_header("Access-Control-Max-Age", "600")
 
-    # Send JSON response
+    # JSON response
     def send_json(self, data, status=200):
+
         response = json.dumps(data).encode("utf-8")
 
         self.send_response(status)
+
         self.send_header(
             "Content-Type", "application/json; charset=utf-8"
         )
-        self.send_header("Content-Length", str(len(response)))
+        self.send_header(
+            "Content-Length", str(len(response))
+        )
 
         self.add_cors_headers()
 
         self.end_headers()
         self.wfile.write(response)
 
-    # Browser preflight
+    # Handle browser preflight
     def do_OPTIONS(self):
+
         self.send_response(204)
+
         self.add_cors_headers()
+
         self.end_headers()
 
     # Health check
     def do_GET(self):
+
         path = self.path.split("?")[0]
 
         if path == "/":
+
             self.send_json({
                 "message": "Welcome to AskNova AI Backend"
             })
 
         elif path == "/health":
+
             self.send_json({
                 "status": "ok"
             })
 
         else:
+
             self.send_json({
                 "error": "Not found"
             }, 404)
 
-    # Gemini chat
+    # Chat endpoint
     def do_POST(self):
 
         if self.path.split("?")[0] != "/chat":
-            self.send_json({"error": "Not found"}, 404)
+
+            self.send_json({
+                "error": "Not found"
+            }, 404)
+
             return
 
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(length))
+
+            length = int(
+                self.headers.get("Content-Length", 0)
+            )
+
+            data = json.loads(
+                self.rfile.read(length)
+            )
+
+            if not isinstance(data, dict):
+
+                self.send_json({
+                    "error": "Invalid request format"
+                }, 400)
+
+                return
 
             message = data.get("message", "")
 
@@ -123,15 +174,19 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             message = message.strip()
 
             if not message:
+
                 self.send_json({
                     "error": "Message is required"
                 }, 400)
+
                 return
 
             if not GEMINI_API_KEY:
+
                 self.send_json({
-                    "error": "API key not found in backend/.env"
+                    "error": "Gemini API key not configured"
                 }, 500)
+
                 return
 
             # Prepare Gemini request
@@ -141,35 +196,42 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             }).encode("utf-8")
 
             request = Request(
-    API_URL,
-    data=payload,
-    headers={
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
-        "Api-Revision": "2026-05-20"
-    },
-    method="POST"
-)
-            # Send request to Gemini
+                API_URL,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": GEMINI_API_KEY,
+                    "Api-Revision": "2026-05-20"
+                },
+                method="POST"
+            )
+
+            # Call Gemini API
             with urlopen(request, timeout=60) as response:
+
                 result = json.loads(
                     response.read().decode("utf-8")
                 )
 
-            # Extract Gemini answer safely
+            # Extract AI response
             reply_parts = []
 
             if isinstance(result, dict):
+
                 for step in result.get("steps", []):
+
                     if not isinstance(step, dict):
                         continue
 
                     if step.get("type") == "model_output":
+
                         for part in step.get("content", []):
+
                             if (
                                 isinstance(part, dict)
                                 and part.get("type") == "text"
                             ):
+
                                 reply_parts.append(
                                     part.get("text", "")
                                 )
@@ -177,16 +239,18 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             reply = "\n".join(reply_parts).strip()
 
             if not reply:
+
                 self.send_json({
-                    "error": "Gemini returned an empty response."
+                    "error": "Gemini returned an empty response"
                 }, 502)
+
                 return
 
             self.send_json({
                 "reply": reply
             })
 
-        # Handle Gemini API errors
+        # Gemini API error
         except HTTPError as error:
 
             raw_error = error.read().decode(
@@ -195,26 +259,31 @@ class AskNovaHandler(BaseHTTPRequestHandler):
 
             try:
                 error_data = json.loads(raw_error)
+
             except json.JSONDecodeError:
                 error_data = raw_error
 
-            # Handle dictionary response
             if isinstance(error_data, dict):
 
-                api_error = error_data.get("error", error_data)
+                api_error = error_data.get(
+                    "error", error_data
+                )
 
                 if isinstance(api_error, dict):
+
                     detail = api_error.get(
                         "message",
-                        json.dumps(api_error, ensure_ascii=False)
+                        json.dumps(api_error)
                     )
+
                 else:
                     detail = str(api_error)
 
-            # Handle list response
             elif isinstance(error_data, list):
+
                 detail = json.dumps(
-                    error_data, ensure_ascii=False
+                    error_data,
+                    ensure_ascii=False
                 )
 
             else:
@@ -234,7 +303,7 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             print("Connection error:", repr(error))
 
             self.send_json({
-                "error": "Google Gemini connection failed. Check internet."
+                "error": "Unable to connect to Google Gemini"
             }, 502)
 
         # JSON error
@@ -243,7 +312,7 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             print("JSON error:", repr(error))
 
             self.send_json({
-                "error": "Invalid JSON request or response."
+                "error": "Invalid JSON request or response"
             }, 400)
 
         # Other backend errors
@@ -252,18 +321,26 @@ class AskNovaHandler(BaseHTTPRequestHandler):
             print("Unexpected server error:", repr(error))
 
             self.send_json({
-                "error": "Backend error. Check the backend terminal."
+                "error": "Unexpected backend error"
             }, 500)
 
 
-# Start backend
-print("Gemini API key loaded:", bool(GEMINI_API_KEY))
+# Render port configuration
+PORT = int(os.environ.get("PORT", "8000"))
+
+# Start backend server
+print(
+    "Gemini API key loaded:",
+    bool(GEMINI_API_KEY)
+)
 
 server = HTTPServer(
-    ("127.0.0.1", 8000),
+    ("0.0.0.0", PORT),
     AskNovaHandler
 )
 
-print("AskNova AI Backend running at http://127.0.0.1:8000")
+print(
+    f"AskNova AI Backend running on port {PORT}"
+)
 
 server.serve_forever()
