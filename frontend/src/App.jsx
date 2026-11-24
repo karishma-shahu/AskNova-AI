@@ -2,6 +2,12 @@
 import { useState } from 'react'
 import './App.css'
 
+// Use Render backend URL in production.
+// Use Vite proxy during local development.
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || ''
+).replace(/\/+$/, '')
+
 function App() {
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useState([])
@@ -21,7 +27,11 @@ function App() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/chat', {
+      const chatUrl = API_BASE_URL
+        ? `${API_BASE_URL}/chat`
+        : '/api/chat'
+
+      const response = await fetch(chatUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -29,7 +39,6 @@ function App() {
         body: JSON.stringify({ message: userMessage })
       })
 
-      // Read response safely
       const responseText = await response.text()
       let data = {}
 
@@ -51,7 +60,7 @@ function App() {
 
       if (!data.reply) {
         throw new Error(
-          data.error || `Backend returned an empty response (HTTP ${response.status})`
+          data.error || 'Backend returned an empty response.'
         )
       }
 
@@ -106,7 +115,9 @@ function App() {
         {messages.length === 0 ? (
           <section className="welcome-section">
             <div className="nova-icon">✦</div>
+
             <h1>Welcome to AskNova AI</h1>
+
             <p>
               Your intelligent AI assistant.
               Ask anything and explore new ideas.
@@ -133,7 +144,10 @@ function App() {
         ) : (
           <section className="messages-container">
             {messages.map((msg, index) => (
-              <div key={index} className={`message ${msg.role}`}>
+              <div
+                key={index}
+                className={`message ${msg.role}`}
+              >
                 <strong>
                   {msg.role === 'user' ? 'You' : '✦ AskNova AI'}
                 </strong>
@@ -162,9 +176,14 @@ function App() {
             placeholder="Ask Nova anything..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            disabled={loading}
           />
 
-          <button className="send-btn" type="submit" disabled={loading}>
+          <button
+            className="send-btn"
+            type="submit"
+            disabled={loading || !message.trim()}
+          >
             ↑
           </button>
         </form>
